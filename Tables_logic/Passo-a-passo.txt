@@ -1,0 +1,84 @@
+REMEMBER TO VERIFY ALL THE DIRECTORYS AND MYSQL USER 
+(Name of the database gta_bus)
++++++++++++++++++++++++++++++++++++++
+>to run create_database:
+
+bash create_database.sh
+-------------------------------------------
+>to run create_tables script:
+
+mysql -u enzofv -p gta_bus < /home/enzofv/Documents/Programming/GTA/Tables_logic/create_tables.sql
+-----------------------------------------
+>to run load_raw_data.sh
+
+bash load_raw_data.sh
+--------------------------------------
+Para adicionar os Stops:
+
+-> erase the first line of gtfs_todas-as-linhas;
+
+mysql -u root -p --local-infile
+
+>use gta_bus;
+
+# FILE gtfs_todas-as-linhas
+LOAD DATA LOCAL INFILE '/home/enzofv/Documents/Programming/GTA/stops_raw_data/gtfs_todas-linhas-paradas.csv'
+IGNORE INTO TABLE gta_bus.Stops 
+FIELDS TERMINATED BY ',' 
+ENCLOSED BY '\"' 
+ESCAPED BY '\"'
+LINES TERMINATED BY '\n'
+(@stop_id,@stop_code,@stop_name,@stop_desc,lat,lng,@zone_id,@stop_url,@location_type,@parent_station,@stop_timezone,@wheelchair_boarding,@platform_code);
+
+#File 2023stops.csv
+LOAD DATA LOCAL INFILE '/home/enzofv/Documents/Programming/GTA/stops_raw_data/2023stops.csv'
+IGNORE INTO TABLE gta_bus.Stops 
+FIELDS TERMINATED BY ',' 
+LINES TERMINATED BY '\n'
+(lat,lng);
+
+-----------------------------------------
+To create function haversine
+
+DELIMITER $$
+
+CREATE FUNCTION `haversine` (
+  lat1 FLOAT,
+  lon1 FLOAT,
+  lat2 FLOAT,
+  lon2 FLOAT
+) RETURNS FLOAT DETERMINISTIC
+BEGIN
+  DECLARE R FLOAT DEFAULT 6371; -- Earth's radius in kilometers
+  DECLARE dLat FLOAT;
+  DECLARE dLon FLOAT;
+  DECLARE a FLOAT;
+  DECLARE c FLOAT;
+  DECLARE distance FLOAT;
+
+  SET dLat = RADIANS(lat2 - lat1);
+  SET dLon = RADIANS(lon2 - lon1);
+
+  SET a = SIN(dLat / 2) * SIN(dLat / 2) +
+          COS(RADIANS(lat1)) * COS(RADIANS(lat2)) *
+          SIN(dLon / 2) * SIN(dLon / 2);
+
+  SET c = 2 * ATAN2(SQRT(a), SQRT(1 - a));
+
+  SET distance = R * c;
+
+  RETURN distance;
+END$$
+
+DELIMITER ;
+
+----------------------------------------
+To insert the data into Encounters:
+
+INSERT INTO Encounters (time, b_identification, stop_id, b_lat, b_lng, distance)
+SELECT p.time, p.bidentification, s.id as stop_id, p.lat, p.lng, haversine(p.lat, p.lng, s.lat, s.lng) AS dist
+FROM Stops as s, Positions as p
+WHERE
+p.lat BETWEEN (s.lat - 0.0031) AND (s.lat + 0.003)
+AND p.lng BETWEEN (s.lng - 0.003) AND (s.lng + 0.003)
+HAVING dist < 1;
